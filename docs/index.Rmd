@@ -1,0 +1,430 @@
+---
+title: "Amazon DataSet"
+author: "Benard Omido"
+date: "2023-11-23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# Data Cleaning and Analysis of Amazon Data
+
+### Understanding the Data set
+
+Amazon is an American Tech Multi-National Company whose business interests include E-commerce, where they buy and store the inventory, and take care of everything from shipping and pricing to customer service and returns. 
+This data set contains data of more than 1K Amazon's products, ratings, reviews, etc.
+
+#### **Primary Objective**
+
+The goal of this project is to clean and transform this Amazon data set into an easy to use format, perform \ 
+
+EDA, and also to derive meaningful insights from it.
+
+
+Load the necessary libraries
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(readr)
+```
+
+Import the dataset
+
+```{r}
+amazon <- read_csv("F:\\Tutorials\\R tutorials\\Datasets\\amazon.csv")
+head(amazon)
+```
+
+Check the data types and structure of variables
+
+```{r}
+glimpse(amazon)
+```
+
+Check for null values, and duplicates
+
+```{r}
+#Use skimr to check for null values
+skimr::skim(amazon)
+
+#Identify and count duplicates
+amazon %>% 
+  summarize(total_dups <- sum(duplicated(.)))
+
+```
+There appears to be one null value in the rating column, and two in the rating_count column, but there are no duplicates
+
+
+### **Data Cleaning Tasks**
+
+1. Create a new data frame that contains columns to be used for analysis
+2. Convert discounted_price, actual_price, and discounted_percentage to numeric form
+3. Fill in  missing values
+4. Split the category column
+
+
+**1.Create a new data frame**
+
+```{r}
+df <- amazon %>% 
+  select(-c(img_link, product_link, about_product, user_id, user_name, review_id, review_title, review_content))
+
+View(df)
+```
+
+
+**2. Changing data types**
+
+```{r}
+#Strip the (₹ and ,) in discounted_price and actual_price, then convert to numeric
+
+df <- df %>% 
+  mutate(
+    across(
+      contains("price"),
+      .fns = ~as.numeric(str_replace_all(.x, "[^0-9.]", ""))
+    )
+  )
+
+head(df)
+```
+
+
+```{r}
+#Transform the discount_percentage column
+class(df$discount_percentage)
+
+df$discount_percentage <- as.numeric(str_replace_all(df$discount_percentage, "%", "")) / 100
+```
+
+**3. Fill in missing values**
+
+```{r}
+df %>% 
+  filter(is.na(rating))
+
+#After investigating this null value in the amazon products website, the correct rating for this product ID should be 4
+class(df$rating)
+
+df$rating <- if_else(is.na(df$rating), as.numeric(4), df$rating)
+```
+
+
+**4. Split the category column**
+
+```{r}
+df <- df %>% 
+  separate(category, into = c("MainCategory", "SubCategory"), sep = "\\|")
+
+head(df)
+```
+
+Check the unique values in both the MainCategory and SubCategory
+
+```{r}
+df %>% 
+  count(MainCategory)
+```
+Fix the strings in the Main Category, for easy readability
+
+```{r}
+df <- df %>% 
+  mutate(
+    across(
+      MainCategory,
+      .fns = ~str_replace_all(.x, c("&"=" ", "MusicalInstruments"="Musical Instruments", 
+                                    "OfficeProducts"="Office Products", "HomeImprovement"="Home Improvement")
+    )
+  ))
+
+unique(df$MainCategory)
+```
+
+Fix the strings in Sub Category Column
+
+```{r}
+df %>% 
+  count(SubCategory)
+
+df <- df %>% 
+  mutate(
+    across(
+      SubCategory,
+      .fns =  ~str_replace_all(.x, c("&"=" ", "NetworkingDevices"="Networking Devices", 
+                                     "HomeTheater"="Home Theater", "HomeAudio"="Home Audio",    "WearableTechnology"="Wearble Technology",
+                                     "ExternalDevices"="External Devices", "GeneralPurposeBatteries"="General Purpose Batteries",
+                                     "OfficePaperProducts" = "Office Paper Products", "CraftMaterials"="Craft Materials", 
+                                     "OfficeElectronics"="Office Electronics", "PowerAccessories"="Power Accessories", 
+                                     "HomeStorage"="Home Storage", "HomeMedicalSupplies"="Home Medical Supplies", 
+                                     "CarAccessories"="Car Accessories", "HomeAppliances"="Home Appliances"))
+    )
+  )
+
+unique(df$SubCategory)
+```
+
+### **Exploratory Data Analysis**
+
+**1. Table Displaying Distribution of Products By Main Category and Sub Category**
+
+```{r}
+library(knitr)
+library(kableExtra)
+
+k <- df %>% 
+  group_by(MainCategory, SubCategory) %>% 
+  summarize(n = n())
+
+k %>%
+  kable(digits = 0, format = "html", caption = "Number Of Products Per Main Category and Sub Category") %>%
+  kable_classic("striped", "bordered", full_width = FALSE, html_font = "Cambria", 
+                position = "left") %>%
+  add_header_above(c(" "=2, "Product Count")) %>%
+  row_spec(0, bold = TRUE) %>%
+  column_spec(1, bold = TRUE, color = "white", background = "#CD661D") 
+```
+
+
+**2. Bar plots displaying the number of products by the Main Category and Sub Category**
+
+**Main Category**
+```{r}
+#Check the number of products under each category
+
+df %>% 
+  count(MainCategory)
+
+```
+Five of the products in the MainCategory had a count of less than or equal to 2, thus for easier visualization, I combined the smaller products and assigned them to "Other"
+
+```{r}
+p <- df %>% 
+  mutate(MainCategory = fct_collapse(MainCategory, 
+                                     Other = c("Car Motorbike", "Health PersonalCare", "Home Improvement", "Musical Instruments", "Toys Games")))
+
+
+#Use fct_rev() and fct_infreq() to reorder the categories using frequency
+
+p_main <- ggplot(p, aes(fct_rev(fct_infreq(MainCategory)))) +
+  geom_bar(aes(fill = MainCategory)) +
+  coord_flip() +
+  scale_fill_manual(values = c("red", "orange", "darkgreen", "dodgerblue", "purple4")) +
+  labs(title = "Number Of Products By Main Category",
+       y = "Number Of Products",
+       x = "Product Category") +
+  geom_text(stat = "count", aes(label = after_stat(count)), vjust = 0.5) +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.title = element_text(face = "bold"),
+        plot.title = element_text(face = "bold", size = 12)) 
+
+p_main
+
+``` 
+
+**Sub Category**
+
+```{r}
+#Check the number of products in each sub category
+df %>% 
+  count(SubCategory, sort = TRUE) 
+
+#There are 29 subcategories, for easy visualization, I used fct_lump() to combine together all sub categories # with count less than 20
+
+p1 <- df %>% 
+  mutate(SubCategory = fct_lump(SubCategory, n = 9))
+
+
+p_sub <- ggplot(p1, aes(fct_rev(fct_infreq(SubCategory)))) +
+  geom_bar(aes(fill = SubCategory)) +
+  coord_flip() +
+  labs(title = "Number Of Products By Sub Category",
+       y = "Number Of Products",
+       x = "Product Category") +
+  geom_text(stat = "count", aes(label = after_stat(count)), vjust = 0.5) +
+  theme_classic() +
+  theme(axis.title = element_text(face = "bold"),
+        plot.title = element_text(face = "bold", size = 12),
+        legend.position = "none")
+
+p_sub
+```
+
+Combine the two plots for easy comparison
+```{r}
+#Load cowplot() library
+library(cowplot)
+
+plot_grid(p_main, p_sub, ncol = 1)
+```
+**Insights**
+
+Under the main category, Electronics had the highest number of sales, followed closely by Computer Accessories, while in the Sub category, Accessories and Peripherals had the highest sales, thus in conclusion, electronics and computer accessories were the best performing products in terms of sales.
+
+
+
+**3. Check whether there exists a relationship between discounted price and actual price**
+
+```{r}
+class(df$discounted_price)
+class(df$actual_price)
+
+ggplot(df, aes(actual_price, discounted_price)) +
+  geom_point(aes(color = "dodgerblue")) +
+  scale_x_continuous(breaks = seq(0, 150000, 30000)) +
+  labs(title = "Relationship Between Discounted Price and Actual Price",
+       x = "Actual Price",
+       y = "Discounted Price") +
+  theme_minimal() +
+  theme(legend.position = "none",
+        axis.title = element_text(color = "black", face = "bold"),
+        plot.title = element_text(face = "bold"))
+
+
+cor.test(df$discounted_price, df$actual_price)
+
+```
+**Insights**
+
+Discounted price and Actual price are highly correlated, with a correlation coefficient of 0.9619153, which indicates a strong positive relationship. Thus, as the actual price of products increases, the amount of discount given also increases.
+
+
+**4. Exploring the distribution of Rating and Rating Count Across all Products**
+
+```{r}
+x1 <- ggplot(df, aes(rating)) +
+  geom_histogram(binwidth = 0.2, aes(fill = c("#1C86EE"))) +
+  scale_fill_manual(values = c("#1C86EE")) +
+  labs(x = "Rating",
+       y = "Count",
+       title = "Distribution of Rating") +
+  theme_minimal() +
+  theme(legend.position = "none",
+        axis.title = element_text(face = "bold"),
+        plot.title = element_text(face = "bold"))
+
+
+x2 <- ggplot(df, aes(rating_count)) +
+  geom_histogram(aes(fill = "purple4")) +
+  scale_fill_manual(values = c("purple4")) +
+  labs(x = "Rating
+       Count",
+       y = "Count",
+       title = "Distribution of Rating Count") +
+  theme_minimal() +
+  theme(legend.position = "none",
+        axis.title = element_text(face = "bold"),
+        plot.title = element_text(face = "bold")) +
+  scale_x_continuous(breaks = seq(0, 500000, 100000),
+                     labels = c(0, "100K", "200K", "300K", "400K", "500K"))
+
+  
+plot_grid(x1, x2, ncol = 2)
+
+ 
+```
+
+**Insights**
+
+The rating distribution is Left skewed, while the amount of Ratings given to a product distribution is Right skewed. Most of the products have a rating of between 3.9 - 4.3, majority have been rated less than 10,000 times, while there are a few exceptional ones which have been rated more than 100,000 times.
+
+
+**5. The Distribution of Rating under different Product Categories**
+```{r}
+#Since the mainCategory column contains categories with count less than 10, I combined some categories, just like how I had done initially, for easy visualization and comparison making
+
+df %>% 
+  mutate(MainCategory = fct_collapse(MainCategory, 
+                                     Other = c("Car Motorbike", "Health PersonalCare", "Home Improvement", "Musical Instruments", "Toys Games"))) %>% 
+  ggplot(aes(fct_reorder(MainCategory, rating), rating)) +
+  geom_boxplot(aes(fill = MainCategory)) +
+  coord_flip() +
+  labs(title = "Distribution of Product Ratings Under Different Main Categories",
+       x = "Product Category",
+       y = "Rating") +
+  theme_minimal() +
+  theme(plot.title = element_text(face = "bold", size = 12),
+        axis.title = element_text(face = "bold"),
+        legend.position = "none")
+```
+**Insights**
+
+Office Products had the highest median ratings of approximately 4.3, followed by Computer Accessories. Notably, the home kitchen category had a number of low ratings, with the lowest being 2.0.
+
+
+**6. Cut the ratings column into satisfaction levels to determine the overall customer's satisfaction for all products**
+
+```{r}
+df_rating <- df %>% 
+  mutate(
+    rating_score = cut(rating,
+                    breaks = 3, 
+                    labels = c("Unsatisfied", "Satisfied", "Very Satisfied"))
+  ) %>% 
+  group_by(rating_score) %>% 
+  summarize(score_count = n()) %>% 
+  ungroup() %>% 
+  mutate(percent = score_count / sum(score_count))
+            
+
+df_rating
+
+ggplot(df_rating, aes(rating_score, percent)) +
+  geom_col(aes(fill = rating_score)) +
+  labs(title = "Overall Customer Satisfaction Levels Based on Rating",
+       x = "Rating Score",
+       y = "Percentage") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.title = element_text(face = "bold"),
+        plot.title = element_text(face = "bold"))
+   
+```
+
+**Insights**
+
+63% of the customers were "Very Satisfied" by the products in this data set, where as 0.6% were "Unsatisfied".
+
+
+
+## **Conclusion**
+
+1. Based on our data set, Electronic products commands the highest sales, followed closely by Computer Accessories products. Musical Instruments, Home Improvement, Toys Games, Car Motorbike, and Health Personal Care Products had made the lowest sales of less than 5.
+Despite Electronic products in the main category having the highest sales, Accessories Peripherals from Computer Accessories category and Kitchen Home Appliances from the Home Kitchen category had the leading sales.
+
+2. Office products had the highest median ratings, implying that they were the most highly rated products by the customers, where as Computer Accessories, Home Kitchen appliances, and Electronic products had midpoint ratings slightly above 4.2, indicating good performance of the products.
+
+3. The data strongly supports the hypothesis that the higher the price of a product is, the higher the discount given. This assumption is satisfied by the existence of a strong positive correlation between the discounted price and actual price of the products.
+
+4. The analysis shows that 63% of the customers were "very satisfied" by the products, 35% were "Satisfied", and only 0.6% were "Unsatisfied". This indicates that products supplied by Amazon are of great quality.
+
+
+
+## **Limitations**
+
+While these insights offer valuable guidance to Amazon customers, it is important to note that this analysis had its own short comings, which include:
+
+1. Products Consolidation: In the analysis, I consolidated categories that had small sizes to enable easy comparison of different product performances, this may have introduced potential bias.
+
+2. Outdated data: The data set was recorded 10 months ago, there might have been changes in the quantity of products across this period. This time difference may affect relevance and applicability of the findings.
+
+
+
+**Data Source Link:**
+[id]: https://www.kaggle.com/code/csanskriti/amazon-sales-data-analysis
+
+
+
+
+
+
+
+
+
+
+
+
+
