@@ -2,8 +2,6 @@
 # Amazon Sales Data Cleaning and Exploratory Analysis Project
 
 
-
-
 ## Overview
 
 This project focuses on the comprehensive data cleaning and exploratory analysis of raw Amazon sales data. The goal is to transform the initial dataset into a usable format and derive meaningful insights that can facilitate decision-making.
